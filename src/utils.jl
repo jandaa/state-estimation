@@ -1,6 +1,8 @@
 using Plots
 using PyPlot;
 const plt = PyPlot;
+pygui(true)
+
 
 function plot_gt(data)
     positions_gt = data["r_i_vk_i"]
