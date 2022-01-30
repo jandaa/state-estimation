@@ -42,7 +42,7 @@ function so3_jacobian(psi::Vector{<:AbstractFloat})
     s = sin(angle)
     c = cos(angle)
 
-    return (s / angle) * I + (1 - s / angle) * axis ./ axis' + (1 - c) / angle * skew(axis)
+    return (s / angle) * I(3) + (1 - s / angle) * axis * axis' + (1 - c) / angle * skew(axis)
 end
 
 function se3_exp(d::Vector{<:AbstractFloat}, psi::Vector{<:AbstractFloat})
@@ -55,10 +55,10 @@ function se3_exp(d::Vector{<:AbstractFloat}, psi::Vector{<:AbstractFloat})
 end
 
 function se3_log(T::Matrix{<:AbstractFloat})
-    psi = so3_log(T[1:4, 1:4])
+    psi = so3_log(T[1:3, 1:3])
 
     J = so3_jacobian(psi)
-    r = inv(J) * T[1:3, 3]
+    r = inv(J) * T[1:3, 4]
 
     return [r; psi]
 end
