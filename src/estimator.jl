@@ -1,6 +1,10 @@
 using CoordinateTransformations, Rotations, StaticArrays
 using LinearAlgebra
 using TransformUtils
+using Plots
+using PyPlot;
+const plt = PyPlot;
+pygui(true)
 
 include("lie_groups.jl")
 
@@ -35,7 +39,10 @@ mutable struct BatchEstimator
     rho_v_c_v::Matrix{Float32}
 
     # Estimated states for each timestep
-    states::Array{Float32,2}
+    states::Array{Float32,3}
+
+    # Ground truth
+    ground_truth::Array{Float32,3}
 
     # Scalars
     num_landmarks::Int
@@ -77,15 +84,17 @@ function create_batch_estimator!(estimator::BatchEstimator, data::Dict)
         times[1, k] - times[1, k-1] for k in 2:size(times, 2)
     ]
 
-    # Set the inital state as ground truth
-    estimator.states = Array{Float32,2}(undef, 6, size(times, 2))
-    estimator.states[:, 1] = [estimator.rᵢ_vₖ_i[:, 1]; estimator.θ_vₖ_i[:, 1]]
-
     return estimator
 end
 
+function ground_truth_k(estimator::BatchEstimator, k)
+    C = so3_exp(estimator.θ_vₖ_i[:, k])
+    d = estimator.rᵢ_vₖ_i[:, k]
+    return [C -C*d; 0 0 0 1]
+end
 
-function forward(estimator::BatchEstimator, k::Int64)
+
+function forward(estimator::BatchEstimator, k::Int64, T::Matrix{<:AbstractFloat})
     # Rotation = Angular velocity * time period
     psi = estimator.ω_vₖ_vₖ_i[:, k] * estimator.time_steps[k]
 
@@ -95,17 +104,66 @@ function forward(estimator::BatchEstimator, k::Int64)
     # Change in pose
     dT = inv(se3_exp(d, -psi))
 
-    curr_state = estimator.states[:, k]
-    T = se3_exp(curr_state[1:3], -curr_state[4:6])
-
-    new_T = dT * T
-    # return Matrix{Float32}(undef, 6, 1)
-    return se3_log(new_T)
+    return dT * T
 end
 
 function dead_reconing!(estimator::BatchEstimator)
-    for k ∈ 1:size(estimator.time_steps, 1)
-        next_state = forward(estimator, k)
-        estimator.states[:, k+1] = next_state
+    k1 = 1216
+    k2 = 1714
+
+    batch_size = k2 - k1
+
+    # Get initial state from ground truth
+    curr_state = ground_truth_k(estimator, k1)
+
+    # Set initial state
+    estimator.states = Array{Float32,3}(undef, 4, 4, batch_size)
+    estimator.states[:, :, 1] = curr_state
+
+    # Set ground truth
+    estimator.ground_truth = Array{Float32,3}(undef, 4, 4, batch_size)
+    estimator.ground_truth[:, :, 1] = inv(curr_state)
+
+
+    for k ∈ k1:k2-1
+        curr_state = forward(estimator, k, curr_state)
+        estimator.states[:, :, k-k1+1] = curr_state
+
+        estimator.ground_truth[:, :, k-k1+1] = inv(ground_truth_k(estimator, k))
     end
+end
+
+function plot(estimator::BatchEstimator)
+    num_steps = size(estimator.states, 3)
+
+    # Create plot
+    ax = plt.axes(projection = "3d")
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+
+    states = [inv(estimator.states[:, :, k]) for k ∈ 1:num_steps]
+
+    # Get state estimates
+    x = [states[k][1, 4] for k ∈ 1:num_steps]
+    y = [states[k][2, 4] for k ∈ 1:num_steps]
+    z = [states[k][3, 4] for k ∈ 1:num_steps]
+    ax.plot3D(x, y, z, c = "red", label = "Dead Reconing")
+
+    # Get ground truth
+    gt_x = [estimator.ground_truth[1, 4, k] for k ∈ 1:num_steps]
+    gt_y = [estimator.ground_truth[2, 4, k] for k ∈ 1:num_steps]
+    gt_z = [estimator.ground_truth[3, 4, k] for k ∈ 1:num_steps]
+    ax.plot3D(gt_x, gt_y, gt_z, c = "blue", label = "GT")
+
+    # Landmark positions
+    l_x = [estimator.rho_i_pj_i[1, i] for i ∈ 1:estimator.num_landmarks]
+    l_y = [estimator.rho_i_pj_i[2, i] for i ∈ 1:estimator.num_landmarks]
+    l_z = [estimator.rho_i_pj_i[3, i] for i ∈ 1:estimator.num_landmarks]
+    ax.scatter(l_x, l_y, l_z, c = "r", label = "landmarks")
+
+    title("Estimate vs Ground Truth")
+    plt.legend()
+    plt.show()
+
 end

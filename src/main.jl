@@ -1,19 +1,19 @@
-using Revise
 using MAT
 
-# include("utils.jl")
 include("estimator.jl")
 
+# Load raw data
+data = matread("data.mat")
+
 function main()
-    # Load raw data
-    data = matread("data.mat")
 
     # Create Batch Estimator from data
     batch_estimator = BatchEstimator(data)
 
-    # Do dead reconing
+    # Do dead reconings
     println("Working")
     dead_reconing!(batch_estimator)
+    plot(batch_estimator)
 end
 
 main()
