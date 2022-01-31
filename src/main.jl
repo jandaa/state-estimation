@@ -10,10 +10,10 @@ function main()
     # Create Batch Estimator from data
     batch_estimator = BatchEstimator(data)
 
-    # Do dead reconings
-    println("Working")
-    dead_reconing!(batch_estimator)
-    plot(batch_estimator)
+    # Perform state estimation
+    states1 = dead_reconing(batch_estimator)
+    states2 = gauss_newton(batch_estimator, states1)
+    plot_trajectory(batch_estimator, states1, states2)
 end
 
 main()
