@@ -1,16 +1,28 @@
 import LinearAlgebra
 
+function close_to_zero(value::T) where {T<:AbstractFloat}
+    return abs(value) < 1e-2
+end
+
 function se3_inv(T::Matrix{<:AbstractFloat})
     C = T[1:3, 1:3]
     d = T[1:3, 4]
     return [C' -C'*d; 0 0 0 1]
 end
 
-function skew(x::Vector{<:AbstractFloat})
+# function skew(x::Vector{<:AbstractFloat})
+#     return [
+#         0 -x[3] x[2]
+#         x[3] 0 -x[1]
+#         -x[2] x[1] 0
+#     ]
+# end
+
+function so3_wedge(ϕ::Vector{<:AbstractFloat})
     return [
-        0 -x[3] x[2]
-        x[3] 0 -x[1]
-        -x[2] x[1] 0
+        0 -ϕ[3] ϕ[2]
+        ϕ[3] 0 -ϕ[1]
+        -ϕ[2] ϕ[1] 0
     ]
 end
 
@@ -19,7 +31,7 @@ function so3_exp(psi::Vector{<:AbstractFloat})
     axis = psi / angle
     s = sin(angle)
     c = cos(angle)
-    return c * I(3) + (1 - c) * axis .* axis' - s * skew(axis)
+    return c * I(3) + (1 - c) * axis .* axis' - s * so3_wedge(axis)
 end
 
 function so3_vee(C::Matrix{<:AbstractFloat})
@@ -32,7 +44,7 @@ function so3_log(C::Matrix{<:AbstractFloat})
     cos_angle = clamp(cos_angle, -1.0, 1.0)
     angle = acos(cos_angle)
 
-    if abs(angle) < 0.001
+    if close_to_zero(angle)
         tmp = C - I
     else
         tmp = (angle / (2 * sin(angle))) * (C - C')
@@ -44,15 +56,15 @@ end
 function so3_jacobian(psi::Vector{<:AbstractFloat})
     angle = norm(psi)
 
-    if abs(angle) < 0.001
-        return I + 0.5 * skew(psi)
+    if close_to_zero(angle)
+        return I + 0.5 * so3_wedge(psi)
     end
 
     axis = psi / angle
     s = sin(angle)
     c = cos(angle)
 
-    return (s / angle) * I(3) + (1 - s / angle) * axis * axis' + (1 - c) / angle * skew(axis)
+    return (s / angle) * I(3) + (1 - s / angle) * axis * axis' + (1 - c) / angle * so3_wedge(axis)
 end
 
 function so3_inv_left_jacobian(phi::Vector{<:AbstractFloat})
@@ -60,7 +72,7 @@ function so3_inv_left_jacobian(phi::Vector{<:AbstractFloat})
     angle = norm(phi)
 
     # Near phi==0, use first order Taylor expansion
-    if abs(angle) < 0.001
+    if close_to_zero(angle)
         return I(3) - 0.5 * so3_wedge(phi)
     end
 
@@ -68,7 +80,7 @@ function so3_inv_left_jacobian(phi::Vector{<:AbstractFloat})
     half_angle = 0.5 * angle
     cot_half_angle = 1.0 / tan(half_angle)
 
-    return half_angle * cot_half_angle * I(dof) + (1 - half_angle * cot_half_angle) * axis * axis' - half_angle * so3_wedge(axis)
+    return half_angle * cot_half_angle * I(dof) + (1 - half_angle * cot_half_angle) * (axis * axis') - half_angle * so3_wedge(axis)
 
 end
 
@@ -89,14 +101,6 @@ function se3_log(T::Matrix{<:AbstractFloat})
 end
 
 # Functions taken from the python liegroups packages
-
-function so3_wedge(ϕ::Vector{<:AbstractFloat})
-    return [
-        0 -ϕ[3] ϕ[2]
-        ϕ[3] 0 -ϕ[1]
-        -ϕ[2] ϕ[1] 0
-    ]
-end
 
 function se3_wedge(ξ::Vector{<:AbstractFloat})
     dim = 4

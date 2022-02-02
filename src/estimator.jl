@@ -19,47 +19,47 @@ D = [
 mutable struct BatchEstimator
 
     # Vectors
-    time_steps::Vector{Float64}
+    time_steps::Vector{Float32}
 
     # Rotational velocity vk_vk
-    ω_vₖ_vₖ_i::Matrix{Float64}
+    ω_vₖ_vₖ_i::Matrix{Float32}
 
     # Linear velocity vk_vk
-    v_vₖ_vₖ_i::Matrix{Float64}
+    v_vₖ_vₖ_i::Matrix{Float32}
 
     # GT rotation (axis-angle)
-    θ_vₖ_i::Matrix{Float64}
+    θ_vₖ_i::Matrix{Float32}
 
     # GT position
-    rᵢ_vₖ_i::Matrix{Float64}
+    rᵢ_vₖ_i::Matrix{Float32}
 
     # landmark position
-    rho_i_pj_i::Matrix{Float64}
+    rho_i_pj_i::Matrix{Float32}
 
     # observations
-    yₖ_j::Array{Float64,3}
+    yₖ_j::Array{Float32,3}
 
     # Transformation from vehicle to camera frame
-    T_c_v::Matrix{Float64}
+    T_c_v::Matrix{Float32}
 
     # Estimated states for each timestep
-    states::Array{Float64,3}
+    states::Array{Float32,3}
 
     # Ground truth
-    ground_truth::Vector{Matrix{Float64}}
+    ground_truth::Vector{Matrix{Float32}}
 
     # Variances
-    v_var::Matrix{Float64}
-    w_var::Matrix{Float64}
-    y_var::Matrix{Float64}
+    v_var::Matrix{Float32}
+    w_var::Matrix{Float32}
+    y_var::Matrix{Float32}
 
     # Scalars
     num_landmarks::Int
-    fu::Float64
-    fv::Float64
-    cu::Float64
-    cv::Float64
-    b::Float64
+    fu::Float32
+    fv::Float32
+    cu::Float32
+    cv::Float32
+    b::Float32
     k1::Int
     k2::Int
     batch_size::Int
@@ -102,16 +102,18 @@ function create_batch_estimator!(estimator::BatchEstimator, data::Dict)
     estimator.T_c_v = [data["C_c_v"] -data["C_c_v"]*data["rho_v_c_v"]; 0 0 0 1]
 
     # Set the period we're looking at 
-    estimator.k1 = 1216
-    estimator.k2 = 1226
-    # estimator.k2 = 1714
+    estimator.k1 = 1218
+    # estimator.k2 = 1218
+    # estimator.k2 = 1226
+    # estimator.k1 = 1200
+    estimator.k2 = 1426
     estimator.batch_size = estimator.k2 - estimator.k1
 
     # Set ground truth
     estimator.ground_truth = ground_truth(estimator)
 
     # Set gauss newton parameters
-    estimator.max_iterations = 8
+    estimator.max_iterations = 3
 
     return estimator
 end
@@ -130,6 +132,7 @@ function ground_truth(estimator::BatchEstimator)
 end
 
 function forward(estimator::BatchEstimator, k::Int64, T::Matrix{<:AbstractFloat})
+
     # Rotation = Angular velocity * time period
     psi = estimator.ω_vₖ_vₖ_i[:, k] * estimator.time_steps[k]
 
@@ -148,7 +151,7 @@ function dead_reconing(estimator::BatchEstimator)
     curr_state = ground_truth_k(estimator, estimator.k1)
 
     # Set initial state
-    states = Array{Float64,3}(undef, estimator.batch_size, 4, 4)
+    states = Array{Float32,3}(undef, estimator.batch_size, 4, 4)
     states[1, :, :] = curr_state
 
     for k ∈ estimator.k1:estimator.k2-2
@@ -194,7 +197,9 @@ end
 # Return the error between two poses expressed as
 # transformation matrices. The error is a 6x1 vector.
 function pose_error(T1::Matrix{<:AbstractFloat}, T2::Matrix{<:AbstractFloat})
-    return se3_log(T1 * se3_inv(T2))
+    error = se3_log(T1 * se3_inv(T2))
+    error[error.<1e-4] .= 0.0
+    return error
 end
 
 # Return the error, in pixels between an observation
@@ -254,10 +259,9 @@ function gauss_newton(estimator::BatchEstimator, initial_estimate::Array{<:Abstr
     for i ∈ 1:estimator.max_iterations
 
         # Initialize lists of arrays
-        ev = Vector{Float64}()  # Motion errors throughout trajectory
-        ey = Vector{Float64}()          # Measurement errors for observations
-        Gs = Vector{Matrix{Float64}}()  # Lower part of the H jacobian matrix
-        # Fs = Matrix{Float64}()  # Upper part of the H jacobian matrix
+        ev = Vector{Float32}()  # Motion errors throughout trajectory
+        ey = Vector{Float32}()          # Measurement errors for observations
+        Gs = Vector{Matrix{Float32}}()  # Lower part of the H jacobian matrix
 
         # Variance P0 of the initial pose
         sigma_init = 1
@@ -268,7 +272,7 @@ function gauss_newton(estimator::BatchEstimator, initial_estimate::Array{<:Abstr
 
         # Wy_inv is the inverse of the second part of the W matrix
         # with diagonal entries related to measurement noise.
-        Wy_inv = Vector{Matrix{Float64}}()
+        Wy_inv = Vector{Matrix{Float32}}()
 
         # push!(ev, pose_error(T0, T_op[1, :, :]))
         ev = [ev; pose_error(T0, T_op[1, :, :])]
@@ -308,8 +312,8 @@ function gauss_newton(estimator::BatchEstimator, initial_estimate::Array{<:Abstr
             qr_inv = 1.0 ./ (estimator.v_var * (estimator.time_steps[k]^2))
             qc_inv = 1.0 ./ (estimator.w_var * (estimator.time_steps[k]^2))
             q_inv = [qr_inv; qc_inv]
+
             # Append the inverse of the Q matrix to the list
-            # push!(Wv_inv, q_inv)
             Wv_inv = [Wv_inv; q_inv]
 
             # Motion jacobian of the previous timestep F_{k-1}
@@ -321,12 +325,10 @@ function gauss_newton(estimator::BatchEstimator, initial_estimate::Array{<:Abstr
             offset = 6 * (k_rel - 1) + 1
             F_row[:, offset:offset+5] = -1 * F
             # Horizontal offset where to place the identity matrix
-            offset = offset + 5
+            offset = offset + 6
             F_row[:, offset:offset+5] = I(6)
 
             # Append the produced row to the list
-            # push!(Fs, F_row)
-            # Fs = [Fs; F_row]
             Fs = vcat(Fs, F_row)
         end
 
@@ -335,9 +337,9 @@ function gauss_newton(estimator::BatchEstimator, initial_estimate::Array{<:Abstr
         for k ∈ estimator.k1:estimator.k2-1
 
             # Produced matrices for the k-th timestep
-            Gk = Vector{Matrix{Float64}}()      # Measurement jacobian
-            eyk = Vector{Float64}()     # Observation errors
-            Rk_inv = Vector{Matrix{Float64}}()  # Inverted measurement covariance matrix
+            Gk = Vector{Matrix{Float32}}()      # Measurement jacobian
+            eyk = Vector{Float32}()     # Observation errors
+            Rk_inv = Vector{Matrix{Float32}}()  # Inverted measurement covariance matrix
 
             # Relative k index starting at 0 when k = k1
             k_rel = k - estimator.k1 + 1
@@ -362,7 +364,6 @@ function gauss_newton(estimator::BatchEstimator, initial_estimate::Array{<:Abstr
 
                     # Compute the measurement error and append to list
                     meas_error = measurement_error(landmark, P_image)
-                    # push!(eyk, meas_error)
                     eyk = [eyk; meas_error]
 
                     # Append the inverse of R
@@ -408,14 +409,13 @@ function gauss_newton(estimator::BatchEstimator, initial_estimate::Array{<:Abstr
                 else
                     Gs = G_row
                 end
-                # push!(Gs, G_row)
             end
         end
 
         # Finally, the H matrix can be produced from its upper and lower parts
         H = [Fs; Gs]
         # Build the inverse covariance matrix
-        W_inv = Diagonal([Wv_inv; Wy_inv])
+        W_inv = Diagonal([Wv_inv; Wy_inv][:, 1])
         # Build the error matrix
         e = [ev; ey]
 
@@ -432,7 +432,7 @@ function gauss_newton(estimator::BatchEstimator, initial_estimate::Array{<:Abstr
         # N is the number of timesteps in the trajectory.
 
         # TODO: FIGURE THIS OUT
-        delta_x = reshape(x_opt, 10, 6)
+        delta_x = reshape(x_opt, 6, estimator.batch_size)'
 
         # To update the operating point of the optimization we
         # need to unstack all optimal perturbations and then
@@ -441,7 +441,9 @@ function gauss_newton(estimator::BatchEstimator, initial_estimate::Array{<:Abstr
         for k ∈ 1:estimator.batch_size
             d = delta_x[k, 1:3]
             psi = delta_x[k, 4:6]
-            T_op[k, :, :] = se3_exp(d, psi) * T_op[k, :, :]
+            # d = clamp!(d, -0.2, 0.2)
+            # psi = clamp!(psi, -0.2, 0.2)
+            T_op[k, :, :] = se3_exp(d, -psi) * T_op[k, :, :]
         end
 
     end
