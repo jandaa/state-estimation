@@ -80,7 +80,7 @@ function create_batch_estimator!(estimator::BatchEstimator, data::Dict)
     estimator.yₖ_j = data["y_k_j"]
 
     # Variances
-    estimator.v_var = data["v_var"]
+    estimator.v_var = data["v_var"] * 3
     estimator.w_var = data["w_var"]
     estimator.y_var = data["y_var"]
 
@@ -103,9 +103,6 @@ function create_batch_estimator!(estimator::BatchEstimator, data::Dict)
 
     # Set the period we're looking at 
     estimator.k1 = 1218
-    # estimator.k2 = 1218
-    # estimator.k2 = 1226
-    # estimator.k1 = 1200
     estimator.k2 = 1426
     estimator.batch_size = estimator.k2 - estimator.k1
 
@@ -455,7 +452,7 @@ function plot_trajectory(estimator::BatchEstimator, dead_reconing::Array{<:Abstr
     num_steps = estimator.batch_size
 
     # Create plot
-    ax = plt.axes(projection = "3d")
+    ax = plt.axes(projection="3d")
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
@@ -466,7 +463,7 @@ function plot_trajectory(estimator::BatchEstimator, dead_reconing::Array{<:Abstr
     x = [states[k][1, 4] for k ∈ 1:num_steps]
     y = [states[k][2, 4] for k ∈ 1:num_steps]
     z = [states[k][3, 4] for k ∈ 1:num_steps]
-    ax.plot3D(x, y, z, c = "red", label = "Dead Reconing")
+    ax.plot3D(x, y, z, c="red", label="Dead Reconing")
 
     states = [inv(gauss_newton[k, :, :]) for k ∈ 1:num_steps]
 
@@ -474,19 +471,19 @@ function plot_trajectory(estimator::BatchEstimator, dead_reconing::Array{<:Abstr
     x = [states[k][1, 4] for k ∈ 1:num_steps]
     y = [states[k][2, 4] for k ∈ 1:num_steps]
     z = [states[k][3, 4] for k ∈ 1:num_steps]
-    ax.plot3D(x, y, z, c = "purple", label = "Gauss Newton")
+    ax.plot3D(x, y, z, c="purple", label="Gauss Newton")
 
     # Get ground truth
     gt_x = [estimator.ground_truth[k][1, 4] for k ∈ 1:num_steps]
     gt_y = [estimator.ground_truth[k][2, 4] for k ∈ 1:num_steps]
     gt_z = [estimator.ground_truth[k][3, 4] for k ∈ 1:num_steps]
-    ax.plot3D(gt_x, gt_y, gt_z, c = "blue", label = "GT")
+    ax.plot3D(gt_x, gt_y, gt_z, c="blue", label="GT")
 
     # Landmark positions
     l_x = [estimator.rho_i_pj_i[1, i] for i ∈ 1:estimator.num_landmarks]
     l_y = [estimator.rho_i_pj_i[2, i] for i ∈ 1:estimator.num_landmarks]
     l_z = [estimator.rho_i_pj_i[3, i] for i ∈ 1:estimator.num_landmarks]
-    ax.scatter(l_x, l_y, l_z, c = "r", label = "landmarks")
+    ax.scatter(l_x, l_y, l_z, c="r", label="landmarks")
 
     title("Estimate vs Ground Truth")
     plt.legend()
